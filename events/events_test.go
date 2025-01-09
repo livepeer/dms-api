@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/livepeer/catalyst-api/balancer/catabalancer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,12 +50,12 @@ func TestItFailsBadShapes(t *testing.T) {
 }
 
 func TestItCanMarshalAndUnMarshalStreamIDs(t *testing.T) {
-	n := NodeUpdateEvent{}
+	n := catabalancer.NodeUpdateEvent{}
 	n.SetStreams([]string{"noningest1", "noningest2"}, []string{"ingest1", "ingest2"})
 	jsonBytes, err := json.Marshal(n)
 	require.NoError(t, err)
 
-	var n2 NodeUpdateEvent
+	var n2 catabalancer.NodeUpdateEvent
 	require.NoError(t, json.Unmarshal(jsonBytes, &n2))
 
 	require.Equal(t, []string{"noningest1", "noningest2"}, n2.GetStreams())
@@ -62,12 +63,12 @@ func TestItCanMarshalAndUnMarshalStreamIDs(t *testing.T) {
 }
 
 func TestItCanMarshalAndUnMarshalStreamIDsWithNoIngestStreams(t *testing.T) {
-	n := NodeUpdateEvent{}
+	n := catabalancer.NodeUpdateEvent{}
 	n.SetStreams([]string{"noningest1", "noningest2"}, []string{})
 	jsonBytes, err := json.Marshal(n)
 	require.NoError(t, err)
 
-	var n2 NodeUpdateEvent
+	var n2 catabalancer.NodeUpdateEvent
 	require.NoError(t, json.Unmarshal(jsonBytes, &n2))
 
 	require.Equal(t, []string{"noningest1", "noningest2"}, n2.GetStreams())
@@ -75,12 +76,12 @@ func TestItCanMarshalAndUnMarshalStreamIDsWithNoIngestStreams(t *testing.T) {
 }
 
 func TestItCanMarshalAndUnMarshalStreamIDsWithNoNonIngestStreams(t *testing.T) {
-	n := NodeUpdateEvent{}
+	n := catabalancer.NodeUpdateEvent{}
 	n.SetStreams([]string{}, []string{"ingest1", "ingest2"})
 	jsonBytes, err := json.Marshal(n)
 	require.NoError(t, err)
 
-	var n2 NodeUpdateEvent
+	var n2 catabalancer.NodeUpdateEvent
 	require.NoError(t, json.Unmarshal(jsonBytes, &n2))
 
 	require.Equal(t, []string{}, n2.GetStreams())

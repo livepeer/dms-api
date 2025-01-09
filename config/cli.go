@@ -46,6 +46,7 @@ type Cli struct {
 	ExternalTranscoder        string
 	VodPipelineStrategy       string
 	MetricsDBConnectionString string
+	NodeStatsConnectionString string
 	ImportIPFSGatewayURLs     []*url.URL
 	ImportArweaveGatewayURLs  []*url.URL
 	NodeName                  string

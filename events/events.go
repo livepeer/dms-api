@@ -1,15 +1,13 @@
 package events
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/hashicorp/serf/serf"
 	"github.com/livepeer/catalyst-api/balancer/catabalancer"
 	"github.com/livepeer/catalyst-api/clients"
-	"github.com/livepeer/catalyst-api/cluster"
 	"github.com/livepeer/catalyst-api/log"
 )
 
@@ -37,34 +35,6 @@ type NukeEvent struct {
 type StopSessionsEvent struct {
 	Resource   string `json:"resource"`
 	PlaybackID string `json:"playback_id"`
-}
-
-// JSON representation is deliberately truncated to keep the message size small
-type NodeUpdateEvent struct {
-	Resource    string                   `json:"resource,omitempty"`
-	NodeID      string                   `json:"n,omitempty"`
-	NodeMetrics catabalancer.NodeMetrics `json:"nm,omitempty"`
-	Streams     string                   `json:"s,omitempty"`
-}
-
-func (n *NodeUpdateEvent) SetStreams(streamIDs []string, ingestStreamIDs []string) {
-	n.Streams = strings.Join(streamIDs, "|") + "~" + strings.Join(ingestStreamIDs, "|")
-}
-
-func (n *NodeUpdateEvent) GetStreams() []string {
-	before, _, _ := strings.Cut(n.Streams, "~")
-	if len(before) > 0 {
-		return strings.Split(before, "|")
-	}
-	return []string{}
-}
-
-func (n *NodeUpdateEvent) GetIngestStreams() []string {
-	_, after, _ := strings.Cut(n.Streams, "~")
-	if len(after) > 0 {
-		return strings.Split(after, "|")
-	}
-	return []string{}
 }
 
 func Unmarshal(payload []byte) (Event, error) {
@@ -96,7 +66,7 @@ func Unmarshal(payload []byte) (Event, error) {
 		}
 		return event, nil
 	case nodeUpdateEventResource:
-		event := &NodeUpdateEvent{}
+		event := &catabalancer.NodeUpdateEvent{}
 		err := json.Unmarshal(payload, event)
 		if err != nil {
 			return nil, err
@@ -106,7 +76,7 @@ func Unmarshal(payload []byte) (Event, error) {
 	return nil, fmt.Errorf("unable to unmarshal event, unknown resource '%s'", generic.Resource)
 }
 
-func StartMetricSending(nodeName string, latitude float64, longitude float64, c cluster.Cluster, mist clients.MistAPIClient) {
+func StartMetricSending(nodeName string, latitude float64, longitude float64, mist clients.MistAPIClient, nodeStatsDB *sql.DB) {
 	ticker := time.NewTicker(catabalancer.UpdateNodeStatsEvery)
 	go func() {
 		for range ticker.C {
@@ -116,13 +86,7 @@ func StartMetricSending(nodeName string, latitude float64, longitude float64, c 
 				continue
 			}
 
-			mistState, err := mist.GetState()
-			if err != nil {
-				log.LogNoRequestID("catabalancer failed to get mist state", "err", err)
-				continue
-			}
-
-			event := NodeUpdateEvent{
+			event := catabalancer.NodeUpdateEvent{
 				Resource: nodeUpdateEventResource,
 				NodeID:   nodeName,
 				NodeMetrics: catabalancer.NodeMetrics{
@@ -132,18 +96,27 @@ func StartMetricSending(nodeName string, latitude float64, longitude float64, c 
 					LoadAvg:                  sysusage.LoadAvg.Load5Min,
 					GeoLatitude:              latitude,
 					GeoLongitude:             longitude,
+					Timestamp:                time.Now(),
 				},
 			}
 
-			var nonIngestStreams, ingestStreams []string
-			for streamID := range mistState.ActiveStreams {
-				if mistState.IsIngestStream(streamID) {
-					ingestStreams = append(ingestStreams, streamID)
-				} else {
-					nonIngestStreams = append(nonIngestStreams, streamID)
+			if mist != nil {
+				mistState, err := mist.GetState()
+				if err != nil {
+					log.LogNoRequestID("catabalancer failed to get mist state", "err", err)
+					continue
 				}
+
+				var nonIngestStreams, ingestStreams []string
+				for streamID := range mistState.ActiveStreams {
+					if mistState.IsIngestStream(streamID) {
+						ingestStreams = append(ingestStreams, streamID)
+					} else {
+						nonIngestStreams = append(nonIngestStreams, streamID)
+					}
+				}
+				event.SetStreams(nonIngestStreams, ingestStreams)
 			}
-			event.SetStreams(nonIngestStreams, ingestStreams)
 
 			payload, err := json.Marshal(event)
 			if err != nil {
@@ -151,12 +124,19 @@ func StartMetricSending(nodeName string, latitude float64, longitude float64, c 
 				continue
 			}
 
-			err = c.BroadcastEvent(serf.UserEvent{
-				Name:    "node-update",
-				Payload: payload,
-			})
+			insertStatement := `insert into "node_stats"(
+                            "node_id",
+                            "stats"
+                            ) values($1, $2)
+							ON CONFLICT (node_id)
+							DO UPDATE SET stats = EXCLUDED.stats;`
+			_, err = nodeStatsDB.Exec(
+				insertStatement,
+				nodeName,
+				payload,
+			)
 			if err != nil {
-				log.LogNoRequestID("catabalancer failed to send node update", "err", err)
+				log.LogNoRequestID("error writing postgres node stats", "err", err)
 				continue
 			}
 		}

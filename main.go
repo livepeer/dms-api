@@ -66,6 +66,7 @@ func main() {
 	fs.StringVar(&cli.ExternalTranscoder, "external-transcoder", "", "URL for the external transcoder to be used by the pipeline coordinator. Only 1 implementation today for AWS MediaConvert which should be in the format: mediaconvert://key-id:key-secret@endpoint-host?region=aws-region&role=iam-role&s3_aux_bucket=s3://bucket")
 	fs.StringVar(&cli.VodPipelineStrategy, "vod-pipeline-strategy", string(pipeline.StrategyCatalystFfmpegDominance), "Which strategy to use for the VOD pipeline")
 	fs.StringVar(&cli.MetricsDBConnectionString, "metrics-db-connection-string", "", "Connection string to use for the metrics Postgres DB. Takes the form: host=X port=X user=X password=X dbname=X")
+	fs.StringVar(&cli.NodeStatsConnectionString, "node-stats-connection-string", "", "Connection string to use for the node stats DB. Takes the form: host=X port=X user=X password=X dbname=X")
 	config.URLSliceVarFlag(fs, &cli.ImportIPFSGatewayURLs, "import-ipfs-gateway-urls", "https://vod-import-gtw.mypinata.cloud/ipfs/?pinataGatewayToken={{secrets.LP_PINATA_GATEWAY_TOKEN}},https://w3s.link/ipfs/,https://ipfs.io/ipfs/,https://cloudflare-ipfs.com/ipfs/", "Comma delimited ordered list of IPFS gateways (includes /ipfs/ suffix) to import assets from")
 	config.URLSliceVarFlag(fs, &cli.ImportArweaveGatewayURLs, "import-arweave-gateway-urls", "https://arweave.net/", "Comma delimited ordered list of arweave gateways")
 	fs.BoolVar(&cli.MistCleanup, "run-mist-cleanup", true, "Run mist-cleanup.sh to cleanup shm")
@@ -228,6 +229,19 @@ func main() {
 		mist = clients.NewMistAPIClient(cli.MistUser, cli.MistPassword, cli.MistHost, cli.MistPort)
 	}
 
+	var nodeStatsDB *sql.DB
+	if cli.NodeStatsConnectionString != "" {
+		nodeStatsDB, err := sql.Open("postgres", cli.NodeStatsConnectionString)
+		if err != nil {
+			glog.Fatalf("Error creating postgres node stats connection: %s", err)
+		}
+
+		// Without this, we've run into issues with exceeding our open connection limit
+		nodeStatsDB.SetMaxOpenConns(50)
+		nodeStatsDB.SetMaxIdleConns(50)
+		nodeStatsDB.SetConnMaxLifetime(time.Hour)
+	}
+
 	if cli.IsClusterMode() {
 		c = cluster.NewCluster(&cli)
 		group.Go(func() error {
@@ -246,16 +260,18 @@ func main() {
 		group.Go(func() error {
 			return reconcileBalancer(ctx, bal, c)
 		})
+
+		if balancer.CombinedBalancerEnabled(cli.CataBalancer) {
+			if cli.Tags["node"] == "media" { // don't announce load balancing availability for testing nodes
+				events.StartMetricSending(cli.NodeName, cli.NodeLatitude, cli.NodeLongitude, mist, nodeStatsDB)
+			}
+		}
 	} else {
 		bal = mist_balancer.NewRemoteBalancer(mistBalancerConfig)
 		if balancer.CombinedBalancerEnabled(cli.CataBalancer) {
-			cataBalancer := catabalancer.NewBalancer(cli.NodeName, cli.CataBalancerMetricTimeout, cli.CataBalancerIngestStreamTimeout)
+			cataBalancer := catabalancer.NewBalancer(cli.NodeName, cli.CataBalancerMetricTimeout, cli.CataBalancerIngestStreamTimeout, nodeStatsDB)
 			// Temporary combined balancer to test cataBalancer logic alongside existing mist balancer
 			bal = balancer.NewCombinedBalancer(cataBalancer, bal, cli.CataBalancer)
-
-			if cli.Tags["node"] == "media" { // don't announce load balancing availability for testing nodes
-				events.StartMetricSending(cli.NodeName, cli.NodeLatitude, cli.NodeLongitude, c, mist)
-			}
 		}
 	}
 
