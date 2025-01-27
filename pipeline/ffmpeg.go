@@ -194,6 +194,7 @@ var sourcePlaybackBucketBlocklist = []string{"lp-us-catalyst-vod-pvt-monster", "
 const maxBitrateSourcePb = 6_000_000
 
 func (f *ffmpeg) sendSourcePlayback(job *JobInfo) {
+	// TODO no source playback for hevc / background livepeer pipeline
 	for _, track := range job.InputFileInfo.Tracks {
 		if track.Bitrate > maxBitrateSourcePb {
 			log.Log(job.RequestID, "source playback not available, bitrate too high", "bitrate", track.Bitrate)

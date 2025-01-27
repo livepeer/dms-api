@@ -678,8 +678,8 @@ func Test_checkMistCompatible(t *testing.T) {
 				strategy: StrategyFallbackExternal,
 				iv:       inCompatibleVideo,
 			},
-			want:          StrategyExternalDominance,
-			wantSupported: false,
+			want:          StrategyBackgroundFFMpeg,
+			wantSupported: true,
 		},
 		{
 			name: "compatible with ffmpeg (non AAC audio) - StrategyFallbackExternal",
