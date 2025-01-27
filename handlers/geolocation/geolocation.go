@@ -102,6 +102,7 @@ func (c *GeolocationHandlersCollection) RedirectHandler() httprouter.Handle {
 		// and `lon` queries can override these and are used by the `studio API` to trigger stream pulls from a desired loc.
 		query := r.URL.Query()
 		lat, lon := query.Get("lat"), query.Get("lon")
+		glog.V(3).Infof("x-latitude=%s x-longitude=%s query_lat=%s query_lon=%s", r.Header.Get("X-Latitude"), r.Header.Get("X-Longitude"), lat, lon)
 		if !isValidGPSCoord(lat, lon) {
 			lat = r.Header.Get("X-Latitude")
 			lon = r.Header.Get("X-Longitude")
