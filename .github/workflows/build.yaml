@@ -91,7 +91,7 @@ jobs:
           tar -czvf "../releases/livepeer-catalyst-api-${GOOS}-${GOARCH}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: release-artifacts
           path: releases/

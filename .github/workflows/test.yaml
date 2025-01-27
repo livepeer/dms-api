@@ -90,7 +90,7 @@ jobs:
           make generate integration-test
 
       - name: Upload logs
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: cucumber-logs
