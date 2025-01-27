@@ -155,11 +155,18 @@ func (f *ffmpeg) HandleStartUploadJob(job *JobInfo) (*HandlerOutput, error) {
 		return nil, fmt.Errorf("error downloading source manifest %s: %w", log.RedactURL(transcodeRequest.SourceManifestURL), err)
 	}
 
+	// Check a few segments from the segmented source input file (non-hls)
 	sourceSegments := sourceManifest.GetAllSegments()
 	job.sourceSegments = len(sourceSegments)
 	err = f.probeSourceSegments(job, sourceSegments)
 	if err != nil {
 		return nil, err
+	}
+
+	// Check a few segments from the recording source input file (hls)
+	err = f.probeRecordingSourceSegments(job, &inputInfo, sourceSegments)
+	if err != nil {
+		log.LogError(job.RequestID, "failed to probe recording source segments before transcoding - continuing with transcode", err)
 	}
 
 	outputs, transcodedSegments, err := transcode.RunTranscodeProcess(transcodeRequest, job.StreamName, inputInfo, f.Broadcaster)
@@ -332,6 +339,44 @@ func (f *ffmpeg) probeSourceSegment(requestID string, seg *m3u8.MediaSegment, so
 	if err != nil && strings.Contains(err.Error(), "no TS found at start of file, duration not set") {
 		return fmt.Errorf("probe failed with audio issues for segment %s: %w", u, err)
 	}
+	return nil
+}
+
+func (f *ffmpeg) probeRecordingSourceSegments(job *JobInfo, iv *video.InputVideo, sourceSegments []*m3u8.MediaSegment) error {
+	// Only inspect recording segments if the height/width was not determined in the initial probing step
+	if job.InputFileInfo.Format != "hls" && (iv.Tracks[0].VideoTrack.Width == 0 || iv.Tracks[0].VideoTrack.Height == 0) {
+		return nil
+	}
+	oldWidth, oldHeight := iv.Tracks[0].VideoTrack.Width, iv.Tracks[0].VideoTrack.Height
+	segCount := len(sourceSegments)
+	// Check a random segment in the middle
+	segmentToCheck := sourceSegments[segCount/2]
+
+	u, err := clients.ManifestURLToSegmentURL(job.SegmentingTargetURL, segmentToCheck.URI)
+	if err != nil {
+		return fmt.Errorf("error checking recording source segments: %w", err)
+	}
+	probeURL, err := clients.SignURL(u)
+	if err != nil {
+		return fmt.Errorf("failed to create signed url for %s: %w", u, err)
+	}
+	if err := backoff.Retry(func() error {
+		recSegmentProbe, err := f.probe.ProbeFile(job.RequestID, probeURL)
+		if err != nil {
+			return fmt.Errorf("probe failed for recording source segment %s: %w", u, err)
+		}
+		videoTrack, err := recSegmentProbe.GetTrack(video.TrackTypeVideo)
+		hasVideoTrack := err == nil
+		if hasVideoTrack {
+			iv.Tracks[0].VideoTrack.Width = videoTrack.Width
+			iv.Tracks[0].VideoTrack.Height = videoTrack.Height
+			log.Log(job.RequestID, "Updated recording track info from", "old-width", oldWidth, "old-height", oldHeight, "new-width", iv.Tracks[0].VideoTrack.Width, "new-height", iv.Tracks[0].VideoTrack.Height)
+		}
+		return nil
+	}, retries(3)); err != nil {
+		return err
+	}
+
 	return nil
 }
 
