@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/livepeer/catalyst-api/video"
@@ -129,7 +130,7 @@ func TestIsProfileValid(t *testing.T) {
 	tests := []struct {
 		name     string
 		request  UploadVODRequest
-		expected bool
+		expected error
 	}{
 		{
 			name: "ValidProfiles",
@@ -139,34 +140,34 @@ func TestIsProfileValid(t *testing.T) {
 					{Width: 1280, Height: 720, Bitrate: 2000, FPS: 24},
 				},
 			},
-			expected: true,
+			expected: nil,
 		},
 		{
 			name: "InvalidProfileWidthWithoutHeight",
 			request: UploadVODRequest{
 				Profiles: []video.EncodedProfile{
-					{Width: 0, Height: 720, Bitrate: 2000, FPS: 24},
+					{Name: "InvalidProfileWidthWithoutHeight", Width: 0, Height: 720, Bitrate: 2000, FPS: 24},
 				},
 			},
-			expected: false,
+			expected: fmt.Errorf("if multiple profiles are specified, all must have a Width, Height and Bitrate. Profile \"InvalidProfileWidthWithoutHeight\" did not"),
 		},
 		{
 			name: "InvalidProfileHeightWithoutWidth",
 			request: UploadVODRequest{
 				Profiles: []video.EncodedProfile{
-					{Width: 1920, Height: 0, Bitrate: 5000, FPS: 30},
+					{Name: "InvalidProfileHeightWithoutWidth", Width: 1920, Height: 0, Bitrate: 5000, FPS: 30},
 				},
 			},
-			expected: false,
+			expected: fmt.Errorf("if multiple profiles are specified, all must have a Width, Height and Bitrate. Profile \"InvalidProfileHeightWithoutWidth\" did not"),
 		},
 		{
 			name: "InvalidProfileWidthHeightWithoutBitrate",
 			request: UploadVODRequest{
 				Profiles: []video.EncodedProfile{
-					{Width: 1920, Height: 1080, Bitrate: 0, FPS: 30},
+					{Name: "InvalidProfileWidthHeightWithoutBitrate", Width: 1920, Height: 1080, Bitrate: 0, FPS: 30},
 				},
 			},
-			expected: false,
+			expected: fmt.Errorf("if multiple profiles are specified, all must have a Width, Height and Bitrate. Profile \"InvalidProfileWidthHeightWithoutBitrate\" did not"),
 		},
 		{
 			name: "SingleProfileWithNonZeroBitrate",
@@ -175,24 +176,26 @@ func TestIsProfileValid(t *testing.T) {
 					{Bitrate: 2000},
 				},
 			},
-			expected: true,
+			expected: nil,
 		},
 		{
 			name: "SingleProfileWithZeroBitrate",
 			request: UploadVODRequest{
 				Profiles: []video.EncodedProfile{
-					{Bitrate: 0},
+					{Name: "SingleProfileWithZeroBitrate", Bitrate: 0},
 				},
 			},
-			expected: false,
+			expected: fmt.Errorf("without Width or Height specified, Bitrate must be set"),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := test.request.IsProfileValid()
-			if result != test.expected {
-				t.Errorf("Expected %v, but got %v", test.expected, result)
+			result := test.request.CheckProfileValid()
+			if test.expected == nil {
+				require.NoError(t, result)
+			} else {
+				require.EqualError(t, test.expected, result.Error())
 			}
 		})
 	}

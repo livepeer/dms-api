@@ -81,10 +81,10 @@ func HasContentType(r *http.Request, mimetype string) bool {
 	return false
 }
 
-func (r UploadVODRequest) IsProfileValid() bool {
+func (r UploadVODRequest) CheckProfileValid() error {
 	// an empty profile is valid and tells us to use the default ABR ladder
 	if len(r.Profiles) == 0 {
-		return true
+		return nil
 	}
 
 	// a special case where only the bitrate is set which tells us to
@@ -93,7 +93,10 @@ func (r UploadVODRequest) IsProfileValid() bool {
 	if len(r.Profiles) == 1 {
 		profile := r.Profiles[0]
 		if profile.Width == 0 && profile.Height == 0 {
-			return profile.Bitrate > 0
+			if profile.Bitrate > 0 {
+				return nil
+			}
+			return fmt.Errorf("without Width or Height specified, Bitrate must be set")
 		}
 	}
 
@@ -101,11 +104,11 @@ func (r UploadVODRequest) IsProfileValid() bool {
 	// user wants to use their own transcode profile
 	for _, profile := range r.Profiles {
 		if profile.Width == 0 || profile.Height == 0 || profile.Bitrate == 0 {
-			return false
+			return fmt.Errorf("if multiple profiles are specified, all must have a Width, Height and Bitrate. Profile %q did not", profile.Name)
 		}
 	}
 
-	return true
+	return nil
 }
 
 func (r UploadVODRequest) IsClippingRequest() bool {
@@ -215,8 +218,8 @@ func (d *CatalystAPIHandlersCollection) handleUploadVOD(w http.ResponseWriter, r
 		return false, errors.WriteHTTPBadRequest(w, "Invalid request payload", err)
 	}
 
-	if !uploadVODRequest.IsProfileValid() {
-		return false, errors.WriteHTTPBadRequest(w, "Invalid request payload", fmt.Errorf("invalid transcode profile requested"))
+	if err := uploadVODRequest.CheckProfileValid(); err != nil {
+		return false, errors.WriteHTTPBadRequest(w, "Invalid request payload", fmt.Errorf("invalid transcode profile requested: %w", err))
 	}
 
 	// If the segment size isn't being overridden then use the default
