@@ -18,6 +18,7 @@ import (
 
 const (
 	Mp4DurationLimit = 21600 //MP4s will be generated only for first 6 hours
+	MaxArgLimit      = 250
 )
 
 func MuxTStoMP4(tsInputFile, mp4OutputFile string) ([]string, error) {
@@ -141,6 +142,29 @@ func ConcatTS(tsFileName string, segmentsList *TSegmentList, sourceMediaPlaylist
 				break
 			}
 		}
+		// If the argument list of files gets too long, linux might complain about exceeding
+		// MAX_ARG limit and ffmpeg (or any other command) using the long list will fail to run.
+		// So we split into chunked files then concat it one final time to get the final file.
+		if len(segmentFilenames) > MaxArgLimit {
+			chunks := ConcatChunkedFiles(segmentFilenames, MaxArgLimit)
+
+			var chunkFiles []string
+			for idx, chunk := range chunks {
+				concatArg := "concat:" + strings.Join(chunk, "|")
+				chunkFilename := fileBaseWithoutExt + "_" + "chunk" + strconv.Itoa(idx) + ".ts"
+				chunkFiles = append(chunkFiles, chunkFilename)
+				err := concatFiles(concatArg, chunkFilename)
+				if err != nil {
+					return totalBytes, fmt.Errorf("failed to file-concat a chunk (#%d)into a ts file: %w", idx, err)
+				}
+			}
+			if len(chunkFiles) == 0 {
+				return totalBytes, fmt.Errorf("failed to generate chunks to concat")
+			}
+			// override with the chunkFilenames instead
+			segmentFilenames = chunkFiles
+
+		}
 		concatArg := "concat:" + strings.Join(segmentFilenames, "|")
 
 		// Use file-based concatenation by reading segment files in text file
@@ -150,7 +174,6 @@ func ConcatTS(tsFileName string, segmentsList *TSegmentList, sourceMediaPlaylist
 		}
 
 		return totalBytes, nil
-
 	} else {
 		// Create a text file containing filenames of the segments
 		segmentListTxtFileName := fileBaseWithoutExt + ".txt"
@@ -254,4 +277,19 @@ func concatFiles(segmentList, outputTsFileName string) error {
 		return fmt.Errorf("transmux error: failed to stat .ts media file: %w", err)
 	}
 	return nil
+}
+
+// ConcatChunkedFiles splits the segmentFilenames into smaller chunks based on the maxLength value,
+// where maxLength is the maximum number of filenames per chunk.
+func ConcatChunkedFiles(filenames []string, maxLength int) [][]string {
+	var chunks [][]string
+	for maxLength > 0 && len(filenames) > 0 {
+		if len(filenames) <= maxLength {
+			chunks = append(chunks, filenames)
+			break
+		}
+		chunks = append(chunks, filenames[:maxLength])
+		filenames = filenames[maxLength:]
+	}
+	return chunks
 }

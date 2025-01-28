@@ -5,6 +5,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -211,6 +213,53 @@ func TestItConcatsStreamsOnlyUptoMP4DurationLimit(t *testing.T) {
 	//199656 seg-1.ts
 	//188376 seg-2.ts
 	require.Equal(t, int64(406268), totalBytesW)
+}
+
+func TestConcatChunkedFiles(t *testing.T) {
+	filenames := make([]string, 10)
+	for i := range filenames {
+		filenames[i] = "file" + strconv.Itoa(i+1)
+	}
+
+	testCases := []struct {
+		name       string
+		maxLength  int
+		wantChunks [][]string
+	}{
+		{
+			name:      "MaxLengthLessThanLength",
+			maxLength: 3,
+			wantChunks: [][]string{
+				{"file1", "file2", "file3"},
+				{"file4", "file5", "file6"},
+				{"file7", "file8", "file9"},
+				{"file10"},
+			},
+		},
+		{
+			name:      "MaxLengthEqualToLength",
+			maxLength: 10,
+			wantChunks: [][]string{
+				{"file1", "file2", "file3", "file4", "file5", "file6", "file7", "file8", "file9", "file10"},
+			},
+		},
+		{
+			name:      "MaxLengthGreaterThanLength",
+			maxLength: 15,
+			wantChunks: [][]string{
+				{"file1", "file2", "file3", "file4", "file5", "file6", "file7", "file8", "file9", "file10"},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			gotChunks := ConcatChunkedFiles(filenames, tc.maxLength)
+			if !reflect.DeepEqual(gotChunks, tc.wantChunks) {
+				t.Errorf("ConcatChunkedFiles(%v, %d) = %v, want %v", filenames, tc.maxLength, gotChunks, tc.wantChunks)
+			}
+		})
+	}
 }
 
 func populateRenditionSegmentList() *TRenditionList {
