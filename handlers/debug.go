@@ -9,6 +9,7 @@ import (
 	"github.com/livepeer/catalyst-api/pipeline"
 )
 
+// TODO add back in
 // DebugEndpointListenAndServe provides a handler to allow us to check internal state of the app for debugging
 func DebugEndpointListenAndServe(port int, vodEngine *pipeline.Coordinator) error {
 	if vodEngine == nil {
