@@ -108,7 +108,7 @@ func GetBandwidthUsage() (float64, error) {
 
 	// Parse json output
 	var data BandwidthData
-	err = json.Unmarshal([]byte(output), &data)
+	err = json.Unmarshal(output, &data)
 	if err != nil {
 		return -1, err
 	}

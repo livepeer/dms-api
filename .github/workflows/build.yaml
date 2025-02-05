@@ -91,9 +91,9 @@ jobs:
           tar -czvf "../releases/livepeer-catalyst-api-${GOOS}-${GOARCH}.tar.gz" .
 
       - name: Upload artifacts for cutting release
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: release-artifacts
+          name: release-artifacts-${{ matrix.platform.name }}-${{ matrix.arch }}
           path: releases/
 
   upload:
@@ -107,10 +107,11 @@ jobs:
       - build
     steps:
       - name: Download artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
-          name: release-artifacts
+          pattern: release-artifacts-*
           path: releases/
+          merge-multiple: true
 
       - name: Generate sha256 checksum and gpg signatures for release artifacts
         uses: livepeer/action-gh-checksum-and-gpg-sign@latest
