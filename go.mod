@@ -9,7 +9,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/cucumber/godog v0.13.0
 	github.com/d1str0/pkcs7 v0.0.0-20200424205038-d65c16a5759a
-	github.com/fergusstrange/embedded-postgres v1.25.0
+	github.com/fergusstrange/embedded-postgres v1.27.0
 	github.com/golang-jwt/jwt/v4 v4.5.0
 	github.com/golang/glog v1.2.0
 	github.com/golang/mock v1.6.0
