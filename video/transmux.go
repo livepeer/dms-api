@@ -25,6 +25,7 @@ func MuxTStoMP4(tsInputFile, mp4OutputFile string) ([]string, error) {
 	// transmux the .ts file into a standalone MP4 file
 	ffmpegErr := bytes.Buffer{}
 	err := ffmpeg.Input(tsInputFile).
+		SetFfmpegPath("/path/to/ffmpeg-nice.sh").
 		Output(mp4OutputFile, ffmpeg.KwArgs{
 			"analyzeduration": "15M",           // Analyze up to 15s of video to figure out the format. We saw failures to detect the video codec without this
 			"movflags":        "faststart",     // Need this for progressive playback and probing
@@ -81,7 +82,7 @@ func MuxTStoFMP4(fmp4ManifestOutputFile string, inputs ...string) error {
 
 	timeout, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(timeout, "ffmpeg", args...)
+	cmd := exec.CommandContext(timeout, "/path/to/ffmpeg-nice.sh", args...)
 
 	var outputBuf bytes.Buffer
 	var stdErr bytes.Buffer
