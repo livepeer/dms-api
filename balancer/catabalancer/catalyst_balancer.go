@@ -411,70 +411,74 @@ func (c *CataBalancer) MistUtilLoadSource(ctx context.Context, streamID, lat, lo
 	return "", fmt.Errorf("catabalancer no node found for ingest stream: %s stale: false", streamID)
 }
 
-var updateNodeStatsEvery = 5 * time.Second
+var StatsUpdateInterval = 5 * time.Second
 
 func isStale(timestamp time.Time, stale time.Duration) bool {
 	return time.Since(timestamp) >= stale
 }
 
 func StartMetricSending(nodeName string, latitude float64, longitude float64, mist clients.MistAPIClient, nodeStatsDB *sql.DB) {
-	ticker := time.NewTicker(updateNodeStatsEvery)
+	ticker := time.NewTicker(StatsUpdateInterval)
 	go func() {
 		for range ticker.C {
-			start := time.Now()
-			sysusage, err := GetSystemUsage()
-			if err != nil {
-				log.LogNoRequestID("catabalancer failed to get sys usage", "err", err)
-				continue
-			}
-
-			event := NodeUpdateEvent{
-				Resource: "nodeUpdate",
-				NodeID:   nodeName,
-				NodeMetrics: NodeMetrics{
-					CPUUsagePercentage:       sysusage.CPUUsagePercentage,
-					RAMUsagePercentage:       sysusage.RAMUsagePercentage,
-					BandwidthUsagePercentage: sysusage.BWUsagePercentage,
-					LoadAvg:                  sysusage.LoadAvg.Load5Min,
-					GeoLatitude:              latitude,
-					GeoLongitude:             longitude,
-					Timestamp:                time.Now(),
-				},
-			}
-
-			if mist != nil {
-				mistState, err := mist.GetState()
-				if err != nil {
-					log.LogNoRequestID("catabalancer failed to get mist state", "err", err)
-					continue
-				}
-
-				var nonIngestStreams, ingestStreams []string
-				for streamID := range mistState.ActiveStreams {
-					if mistState.IsIngestStream(streamID) {
-						ingestStreams = append(ingestStreams, streamID)
-					} else {
-						nonIngestStreams = append(nonIngestStreams, streamID)
-					}
-				}
-				event.SetStreams(nonIngestStreams, ingestStreams)
-			}
-
-			payload, err := json.Marshal(event)
-			if err != nil {
-				log.LogNoRequestID("catabalancer failed to marhsal node update", "err", err)
-				continue
-			}
-			sendMetrics(nodeStatsDB, nodeName, payload)
-
-			metrics.Metrics.CatabalancerSendMetricDurationSec.Observe(time.Since(start).Seconds())
+			sendMetrics(nodeName, latitude, longitude, mist, nodeStatsDB)
 		}
 	}()
 }
 
-func sendMetrics(nodeStatsDB *sql.DB, nodeName string, payload []byte) {
+func sendMetrics(nodeName string, latitude float64, longitude float64, mist clients.MistAPIClient, nodeStatsDB *sql.DB) {
 	start := time.Now()
-	queryContext, cancel := context.WithTimeout(context.Background(), updateNodeStatsEvery)
+	sysusage, err := GetSystemUsage()
+	if err != nil {
+		log.LogNoRequestID("catabalancer failed to get sys usage", "err", err)
+		return
+	}
+
+	event := NodeUpdateEvent{
+		Resource: "nodeUpdate",
+		NodeID:   nodeName,
+		NodeMetrics: NodeMetrics{
+			CPUUsagePercentage:       sysusage.CPUUsagePercentage,
+			RAMUsagePercentage:       sysusage.RAMUsagePercentage,
+			BandwidthUsagePercentage: sysusage.BWUsagePercentage,
+			LoadAvg:                  sysusage.LoadAvg.Load5Min,
+			GeoLatitude:              latitude,
+			GeoLongitude:             longitude,
+			Timestamp:                time.Now(),
+		},
+	}
+
+	if mist != nil {
+		mistState, err := mist.GetState()
+		if err != nil {
+			log.LogNoRequestID("catabalancer failed to get mist state", "err", err)
+			return
+		}
+
+		var nonIngestStreams, ingestStreams []string
+		for streamID := range mistState.ActiveStreams {
+			if mistState.IsIngestStream(streamID) {
+				ingestStreams = append(ingestStreams, streamID)
+			} else {
+				nonIngestStreams = append(nonIngestStreams, streamID)
+			}
+		}
+		event.SetStreams(nonIngestStreams, ingestStreams)
+	}
+
+	payload, err := json.Marshal(event)
+	if err != nil {
+		log.LogNoRequestID("catabalancer failed to marhsal node update", "err", err)
+		return
+	}
+	sendMetricsToDB(nodeStatsDB, nodeName, payload)
+
+	metrics.Metrics.CatabalancerSendMetricDurationSec.Observe(time.Since(start).Seconds())
+}
+
+func sendMetricsToDB(nodeStatsDB *sql.DB, nodeName string, payload []byte) {
+	start := time.Now()
+	queryContext, cancel := context.WithTimeout(context.Background(), StatsUpdateInterval)
 	defer cancel()
 	insertStatement := `insert into "node_stats"(
                             "node_id",

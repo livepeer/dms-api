@@ -50,14 +50,21 @@ type MistClient struct {
 	HttpReqUrl string
 	configMu   sync.Mutex
 	cache      *cache.Cache
+	httpClient *http.Client
 }
 
-func NewMistAPIClient(user, password, host string, port int) MistAPIClient {
+const MistClientTimeout = 1 * time.Minute
+
+func NewMistAPIClient(user, password, host string, port int, timeout time.Duration) MistAPIClient {
+	if timeout == 0 {
+		timeout = MistClientTimeout
+	}
 	mist := &MistClient{
-		ApiUrl:   fmt.Sprintf("http://%s:%d", host, port),
-		Username: user,
-		Password: password,
-		cache:    cache.New(defaultCacheExpiration, cacheCleanupInterval),
+		ApiUrl:     fmt.Sprintf("http://%s:%d", host, port),
+		Username:   user,
+		Password:   password,
+		cache:      cache.New(defaultCacheExpiration, cacheCleanupInterval),
+		httpClient: newRetryableClient(&http.Client{Timeout: timeout}),
 	}
 	return mist
 }
@@ -238,10 +245,6 @@ type MistPushStats struct {
 	Tracks        []int `json:"tracks"`
 }
 
-const MIST_CLIENT_TIMEOUT = 1 * time.Minute
-
-var mistRetryableClient = newRetryableClient(&http.Client{Timeout: MIST_CLIENT_TIMEOUT})
-
 func (mc *MistClient) AddStream(streamName, sourceUrl string) error {
 	c := commandAddStream(streamName, sourceUrl)
 	return wrapErr(validateAddStream(mc.sendCommand(c)), streamName)
@@ -405,7 +408,7 @@ func (mc *MistClient) sendCommandToMist(command interface{}) (string, error) {
 		return "", err
 	}
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := metrics.MonitorRequest(metrics.Metrics.MistClient, mistRetryableClient, req)
+	resp, err := metrics.MonitorRequest(metrics.Metrics.MistClient, mc.httpClient, req)
 	if err != nil {
 		return "", err
 	}
@@ -437,7 +440,7 @@ func (mc *MistClient) sendHttpRequest(streamName string) (string, error) {
 		return "", err
 	}
 	req.Header.Add("Content-Type", "application/json")
-	resp, err := metrics.MonitorRequest(metrics.Metrics.MistClient, mistRetryableClient, req)
+	resp, err := metrics.MonitorRequest(metrics.Metrics.MistClient, mc.httpClient, req)
 	if err != nil {
 		return "", err
 	}

@@ -227,7 +227,7 @@ func main() {
 	}
 
 	if cli.MistEnabled {
-		mist = clients.NewMistAPIClient(cli.MistUser, cli.MistPassword, cli.MistHost, cli.MistPort)
+		mist = clients.NewMistAPIClient(cli.MistUser, cli.MistPassword, cli.MistHost, cli.MistPort, 0)
 	}
 
 	catabalancerEnabled := balancer.CombinedBalancerEnabled(cli.CataBalancer)
@@ -267,6 +267,7 @@ func main() {
 
 		if catabalancerEnabled && nodeStatsDB != nil {
 			if cli.Tags["node"] == "media" { // don't announce load balancing availability for testing nodes
+				mist := clients.NewMistAPIClient(cli.MistUser, cli.MistPassword, cli.MistHost, cli.MistPort, catabalancer.StatsUpdateInterval-time.Second)
 				catabalancer.StartMetricSending(cli.NodeName, cli.NodeLatitude, cli.NodeLongitude, mist, nodeStatsDB)
 			}
 		}
