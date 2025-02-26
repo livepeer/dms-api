@@ -7,9 +7,10 @@ import (
 )
 
 type ClientMetrics struct {
-	RetryCount      *prometheus.GaugeVec
-	FailureCount    *prometheus.CounterVec
-	RequestDuration *prometheus.HistogramVec
+	RetryCount       *prometheus.GaugeVec
+	FailureCount     *prometheus.CounterVec
+	RequestDuration  *prometheus.HistogramVec
+	BytesTransferred *prometheus.CounterVec
 }
 
 type VODPipelineMetrics struct {
@@ -207,6 +208,10 @@ func NewMetrics() *CatalystAPIMetrics {
 				Name:    "object_store_request_duration",
 				Help:    "Time taken to send object store requests",
 				Buckets: []float64{.005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+			}, []string{"host", "operation", "bucket"}),
+			BytesTransferred: promauto.NewCounterVec(prometheus.CounterOpts{
+				Name: "object_store_bytes_transferred",
+				Help: "The total number of bytes transferred from storage",
 			}, []string{"host", "operation", "bucket"}),
 		},
 

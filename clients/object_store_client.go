@@ -27,6 +27,51 @@ func DownloadOSURL(osURL string) (io.ReadCloser, error) {
 	return fileInfoReader.Body, nil
 }
 
+func NewTeeReadCloser(readCloser io.ReadCloser, writer io.Writer) io.ReadCloser {
+	return &TeeReadCloser{
+		reader: io.TeeReader(readCloser, writer),
+		closer: readCloser,
+	}
+}
+
+type TeeReadCloser struct {
+	reader io.Reader
+	closer io.Closer
+}
+
+func (tr *TeeReadCloser) Read(p []byte) (n int, err error) {
+	return tr.reader.Read(p)
+}
+
+func (tr *TeeReadCloser) Close() error {
+	return tr.closer.Close()
+}
+
+func newByteReporter(host, bucket string) *byteReporter {
+	return &byteReporter{
+		host:   host,
+		bucket: bucket,
+	}
+}
+
+type byteReporter struct {
+	count  int64
+	host   string
+	bucket string
+}
+
+func (c *byteReporter) Write(p []byte) (int, error) {
+	n := len(p)
+	c.count += int64(n)
+	if c.count%1024*1024 == 0 {
+		// report count every 1MB, accept that accuracy may be up to 1MB incorrect
+		metrics.Metrics.ObjectStoreClient.BytesTransferred.WithLabelValues(c.host, "read", c.bucket).Add(float64(c.count))
+		c.count = 0
+	}
+
+	return n, nil
+}
+
 func GetOSURL(osURL, byteRange string) (*drivers.FileInfoReader, error) {
 	storageDriver, err := drivers.ParseOSURL(osURL, true)
 	if err != nil {
@@ -61,6 +106,9 @@ func GetOSURL(osURL, byteRange string) (*drivers.FileInfoReader, error) {
 	duration := time.Since(start)
 
 	metrics.Metrics.ObjectStoreClient.RequestDuration.WithLabelValues(host, "read", bucket).Observe(duration.Seconds())
+
+	// wrap the ReadCloser in a TeeReadCloser so that we can record the egress bytes
+	fileInfoReader.Body = NewTeeReadCloser(fileInfoReader.Body, newByteReporter(host, bucket))
 
 	return fileInfoReader, nil
 }
