@@ -623,6 +623,7 @@ func (mc *mac) invalidateAllSessions(playbackID string) {
 // Note that we use Mist AUTO_PUSH (which in turn makes sure that the PUSH is always available).
 // Note also that we only create AUTO_PUSH for active streams which are ingest (not playback).
 func (mc *mac) reconcileMultistream(mistState clients.MistState) {
+	glog.Warningf("### Reconciling Multistreams, mistState=%v", mistState)
 	type key struct {
 		stream string
 		target string
@@ -652,6 +653,8 @@ func (mc *mac) reconcileMultistream(mistState clients.MistState) {
 			mistMap[toKey(e.Stream, e.Target)] = true
 		}
 	}
+	glog.Warningf("### mistMap=%v", mistMap)
+	glog.Warningf("### filteredMistPushAutoList=%v", filteredMistPushAutoList)
 
 	// Get the existing PUSH from Mist
 	var filteredMistPushList []*clients.MistPush
@@ -661,6 +664,7 @@ func (mc *mac) reconcileMultistream(mistState clients.MistState) {
 			filteredMistPushList = append(filteredMistPushList, e)
 		}
 	}
+	glog.Warningf("### mistMap=%v", mistMap)
 
 	// Get the expected multistreams from cached streamInfo
 	type pushInfo struct {
@@ -681,6 +685,7 @@ func (mc *mac) reconcileMultistream(mistState clients.MistState) {
 		}
 	}
 	mc.mu.Unlock()
+	glog.Warningf("### cachedMap=%v", cachedMap)
 
 	// Remove AUTO_PUSH that exists in Mist, but is not in streamInfo cache
 	for _, e := range filteredMistPushAutoList {
@@ -710,6 +715,8 @@ func (mc *mac) reconcileMultistream(mistState clients.MistState) {
 
 	// Add AUTO_PUSH that exists streamInfo cache, but not in Mist
 	for k, v := range cachedMap {
+		glog.Warningf("### k=%v v=%v", k, v)
+		glog.Warningf("### v.enabled=%v mistMap[toKey(k.stream, k.target)]=%v", v.enabled, mistMap[toKey(k.stream, k.target)])
 		if v.enabled && !mistMap[toKey(k.stream, k.target)] {
 			glog.Infof("adding AUTO_PUSH for stream=%s target=%s", k.stream, k.target)
 			if err := mc.mist.PushAutoAdd(k.stream, k.target); err != nil {
